@@ -11,7 +11,7 @@
 | M4 时效计算 | 分别核算常规与急诊时效 | `/calculate`、`/api/calculate` | `app/modules/calculate/sla.py` `app/modules/calculate/service.py` | `tests/test_calculate.py` |
 | M5 异常隔离 | 按原因筛查拒收证据 | `/quarantine`、`/api/quarantine` | `app/modules/quarantine/diagnose.py` `app/modules/quarantine/service.py` | `tests/test_quarantine.py` |
 | M6 科室对账 | 核对行数与科室分位数 | `/reconcile`、`/api/reconcile` | `app/modules/reconcile/metrics.py` `app/modules/reconcile/service.py` | `tests/test_reconcile.py` |
-| M7 批次复核 | 幂等存档与乐观版本复核 | `/batches`、`/api/batches` | `app/modules/batches/review.py` `app/modules/batches/service.py` | `tests/test_batches.py` |
+| M7 批次复核 | 幂等存档与乐观版本复核；日历更正替换正式结论 | `/batches`、`/api/batches`、`/api/batches/correct` | `app/modules/batches/review.py` `app/modules/batches/service.py` `app/modules/batches/correction.py` | `tests/test_batches.py` `tests/test_correction.py` |
 
 ## 陷阱登记
 | TRAP | 现象 | 朴素实现会怎样 | 本项目处理 | 处理位置 | 测试 |
@@ -26,12 +26,16 @@
 | TRAP-23 | 区间端点 | 直接减时间或后写覆盖导致误判 | 按契约保留证据并确定性计算 | `app/modules/model/calendar.py` | `tests/test_model.py::test_half_open_intersection` |
 | TRAP-25 | 项目版本重叠 | 直接减时间或后写覆盖导致误判 | 按契约保留证据并确定性计算 | `app/modules/contract/versions.py` | `tests/test_contract.py::test_version_overlap` |
 | TRAP-26 | 陈旧复核 | 直接减时间或后写覆盖导致误判 | 按契约保留证据并确定性计算 | `app/modules/batches/service.py` | `tests/test_batches.py::test_stale_version` |
+| TRAP-27 | 日历事后更正 | 追改原批复致审计失真，或保留旧结论让错误超时进考核 | 发布新正式结论并留存旧批复，复核页前后对照 | `app/modules/batches/correction.py` `app/store.py` | `tests/test_correction.py` |
+| TRAP-28 | 更正重试 | 重复点击生成重复正式批次 | 更正幂等键，重试返回既有结论 | `app/modules/batches/correction.py` | `tests/test_correction.py::test_idempotent_retry_adds_no_duplicate` |
+| TRAP-29 | 更正中途失败 | 新旧结论并存或旧版丢失 | 单事务切换，失败回滚保留旧正式结论 | `app/store.py` | `tests/test_correction.py::test_transaction_failure_rolls_back` |
+| TRAP-30 | 日历回改 | 重跑重新读取样例日历，临时停诊被抹掉 | 生效日历持久化并参与批次摘要 | `app/store.py` `app/pipeline.py` | `tests/test_correction.py::test_corrected_calendar_survives_rerun` |
 
 ## 对账规则
 输入=有效时效+隔离+空行。有效时效=达标+超时，各科室合计必须回到有效数；P50/P95采用最近秩。
 
 ## 恢复与不变量
-同内容、项目版本、日历、暂停与宽限参数的摘要构成批次键；幂等重跑不追加。SQLite事务保存完整计算结果，失败不落半批。复核使用版本乐观锁。每个业务模块可独立以样例运行。暂停先求并集，再与工作段交集；不因重复批准扣两次。
+同内容、项目版本、日历、暂停与宽限参数的摘要构成批次键；幂等重跑不追加。SQLite事务保存完整计算结果，失败不落半批。复核使用版本乐观锁。更正以原批次+增删日期构成幂等键，单事务发布新正式结论并标记旧批复为已被替代；原始标本字节与已确认证据不得缺失。每个业务模块可独立以样例运行。暂停先求并集，再与工作段交集；不因重复批准扣两次。
 
 ## 已知不覆盖
 日历固定Asia/Shanghai，不包含跨DST工作区。仅处理31天内已签发标本。无医院系统连接，不诊断医疗结果。

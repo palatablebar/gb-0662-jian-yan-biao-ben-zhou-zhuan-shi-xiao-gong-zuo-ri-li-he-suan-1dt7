@@ -19,6 +19,7 @@ docker compose exec -T app pytest -q
 3. 时效计算页筛选标本或科室，复核净分钟及上限。
 4. 查看异常隔离的CONFLICT与REVERSED证据。
 5. 科室对账确认输入行数守恒，再在批次复核确认版本。
+6. 批次复核页可提交节假日历更正：新增临时停诊或恢复工作日会替换当前正式结论，旧批复保留为“已被更正替代”，页面下方按标本对照净分钟、结论与来源的前后值。同一更正重试不新增结果。
 
 SQLite使用records命名卷。`docker compose down`停止服务后数据保留；确认只需演示初始数据后可用 `docker compose down -v`删除本项目数据重新启动。数据字段定义见 `docs/DATA-DICTIONARY.md`，边界与测试映射见 `docs/DEPTH.md`。
 

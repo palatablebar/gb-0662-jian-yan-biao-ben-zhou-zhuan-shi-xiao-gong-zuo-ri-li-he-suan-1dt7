@@ -4,13 +4,15 @@ from fastapi.responses import JSONResponse,RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import ROOT
 from app.errors import RuleError
-from app.pipeline import execute,sample_bytes
+from app.pipeline import execute_current,sample_bytes
 from app.modules.batches.service import persist
 from app import store
 @asynccontextmanager
 async def lifespan(app):
     store.connect().close()
-    if store.latest() is None:persist(execute(sample_bytes()))
+    store.backfill_raw([sample_bytes(name) for name in ('dirty','clean','gb18030')])
+    if store.latest() is None:
+        raw=sample_bytes();persist(execute_current(raw),raw)
     yield
 app=FastAPI(title='检验周转工作台',lifespan=lifespan)
 app.mount('/static',StaticFiles(directory=str(ROOT/'app/static')),name='static')
@@ -25,7 +27,9 @@ def health():return {'status':'ok'}
 @app.post('/api/runs')
 def run(payload:dict=Body(default={})):
     raw=payload.get('csv_text')
-    return persist(execute(raw.encode('utf-8') if isinstance(raw,str) else sample_bytes(payload.get('sample','dirty')),payload.get('grace','0')))
+    body=raw.encode('utf-8') if isinstance(raw,str) else sample_bytes(payload.get('sample','dirty'))
+    calendar,_=store.active_calendar()
+    return persist(execute_current(body,payload.get('grace','0')),body)
 from app.modules.intake.handler import router as r1
 from app.modules.contract.handler import router as r2
 from app.modules.model.handler import router as r3
